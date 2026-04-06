@@ -1,0 +1,16 @@
+# Node dependencies
+node_modules/
+dist/
+
+# Azurite Local Data (The JSON files in your screenshot)
+__azurite_db*__.json
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+
+# Environment & Secrets
+.env
+local.settings.json
+
+# IDE files
+.vscode/
