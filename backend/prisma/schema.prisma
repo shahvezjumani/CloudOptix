@@ -12,3 +12,14 @@ datasource db {
 
   provider = "sqlserver"
 }
+
+
+model FileMetadata {
+  id        String   @id @default(uuid())
+  name      String
+  blobUrl   String
+  size      Int
+  category  String?
+  status    String   @default("Pending")
+  createdAt DateTime @default(now())
+}
