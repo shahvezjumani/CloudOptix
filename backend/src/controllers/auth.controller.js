@@ -144,7 +144,7 @@ const login = asyncHandler(async (req, res) => {
     config.ACCESS_JWT_SECRET,
     {
       expiresIn: config.ACCESS_JWT_EXPIRES_IN,
-    }
+    },
   );
 
   res
@@ -158,4 +158,122 @@ const login = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, { accessToken, user }, "Login successful"));
 });
 
-export { register, verifyEmail, login };
+const logout = asyncHandler(async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  //   get refreshToken
+  // clear cookies
+  // decode the refreshToken
+  // get id
+  // search session record of this id
+  // make the revoke true
+  // return json success
+
+  if (!refreshToken) {
+    throw new ApiError(400, "Refresh token is required");
+  }
+
+  const decode = await jwt.verify(refreshToken, config.REFRESH_JWT_SECRET);
+
+  await prisma.session.update({
+    where: {
+      refreshToken: await bcrypt.hash(refreshToken, 10),
+    },
+    data: {
+      revoked: true,
+    },
+  });
+
+  res
+    .clearCookie("refreshToken")
+    .json(new ApiResponse(200, {}, "Logout successful"));
+});
+
+const logoutAll = asyncHandler(async (req, res) => {
+  /*
+  get refreshToken
+decode
+get userId
+updade all where userid is userId, make revoked
+clear cookies
+  */
+
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    throw new ApiError(400, "Refresh token is required");
+  }
+
+  const decode = await jwt.verify(refreshToken, config.REFRESH_JWT_SECRET);
+
+  await prisma.session.updateMany({
+    where: {
+      userId: decode.userId,
+    },
+    data: {
+      revoked: true,
+    },
+  });
+
+  res
+    .clearCookie("refreshToken")
+    .json(new ApiResponse(200, {}, "Logout from all sessions successful"));
+});
+
+const refreshToken = asyncHandler(async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    throw new ApiError(400, "Refresh token is required");
+  }
+
+  const decode = await jwt.verify(refreshToken, config.REFRESH_JWT_SECRET);
+
+  const session = await prisma.session.findFirst({
+    where: {
+      refreshToken: await bcrypt.hash(refreshToken, 10),
+      revoked: false,
+    },
+  });
+
+  if (!session) {
+    throw new ApiError(400, "Invalid refresh token");
+  }
+
+  const accessToken = jwt.sign(
+    { userId: decode.userId, sessionId: session.id },
+    config.ACCESS_JWT_SECRET,
+    {
+      expiresIn: config.ACCESS_JWT_EXPIRES_IN,
+    },
+  );
+
+  const newRefreshToken = jwt.sign(
+    { userId: decode.userId },
+    config.REFRESH_JWT_SECRET,
+    {
+      expiresIn: config.REFRESH_JWT_EXPIRES_IN,
+    },
+  );
+
+  prisma.session.update({
+    where: {
+      id: session.id,
+    },
+    data: {
+      refreshToken: await bcrypt.hash(newRefreshToken, 10),
+    },
+  });
+
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { accessToken, refreshToken: newRefreshToken },
+        "Token refreshed successfully",
+      ),
+    );
+});
+
+export { register, verifyEmail, login, logout, logoutAll, refreshToken };
