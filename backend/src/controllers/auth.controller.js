@@ -276,4 +276,7 @@ const refreshToken = asyncHandler(async (req, res) => {
     );
 });
 
+// forgot password
+// reset password
+
 export { register, verifyEmail, login, logout, logoutAll, refreshToken };

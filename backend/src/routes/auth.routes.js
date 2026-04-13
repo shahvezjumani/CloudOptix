@@ -15,4 +15,6 @@ router.post("/logout", authController.logout);
 
 router.post("/logout-all", authController.logoutAll);
 
+// GET  /api/auth/me
+
 export default router;
