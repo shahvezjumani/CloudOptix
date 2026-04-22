@@ -29,26 +29,31 @@ const ALLOWED_TYPES = [
   "text/plain", // .txt
   "text/csv", // .csv
 ];
-
-const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB per file
+const MAX_TOTAL_SIZE = 500 * 1024 * 1024; // 500MB per batch
+const MAX_FILES = 50; // max files per request
 
 const storage = multer.memoryStorage(); // keep file in buffer, upload directly to blob
 
 const fileFilter = (req, file, cb) => {
   if (ALLOWED_TYPES.includes(file.mimetype)) {
-    console.log(`Accepted file type: ${file.mimetype}`);
-    console.log(`File info: ${JSON.stringify(file)} `);
-    console.log(`File : ${file} `);
     cb(null, true);
   } else {
-    console.log(`Rejected file type: ${file.mimetype}`);
-
     cb(new Error(`File type ${file.mimetype} is not allowed`), false);
   }
 };
 
-export const upload = multer({
+const multerInstance = multer({
   storage,
-  limits: { fileSize: MAX_SIZE },
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    files: MAX_FILES,
+  },
   fileFilter,
 });
+
+// Single file upload
+export const uploadSingle = multerInstance.single("file");
+
+// Multiple files upload
+export const uploadMultiple = multerInstance.array("files", MAX_FILES);

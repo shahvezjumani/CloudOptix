@@ -13,6 +13,6 @@ app.use(express.json());
 
 app.use("/api/v1",routes)
 
-app.use(errorHandler);
+// app.use(errorHandler);
 
 export default app;

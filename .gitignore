@@ -8,6 +8,10 @@ __blobstorage__/
 __queuestorage__/
 __tablestorage__/
 
+azurite-data/
+
+azurite-debug.log
+
 # Environment & Secrets
 .env
 local.settings.json

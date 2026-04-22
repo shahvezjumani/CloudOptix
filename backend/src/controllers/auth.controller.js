@@ -35,6 +35,9 @@ const register = asyncHandler(async (req, res) => {
       email,
       password: await bcrypt.hash(password, 10),
       username,
+      storageUsed: 0,
+      sessions: null,
+      files: null,
     },
   });
 
