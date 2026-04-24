@@ -11,12 +11,12 @@ export const uploadFile = asyncHandler(async (req, res, next) => {
     req.file.originalname,
     req.file.mimetype,
     req.file.size,
-    "bb5f016f-8c99-43cf-8b43-ff8da3e87c77",
+    req?.user?.id,
   );
 
   res
     .status(201)
-    .json(new ApiResponse(201, "File uploaded successfully", { file }));
+    .json(new ApiResponse(201, file, "File uploaded successfully"));
 });
 
 export const uploadFiles = asyncHandler(async (req, res) => {
@@ -28,7 +28,7 @@ export const uploadFiles = asyncHandler(async (req, res) => {
 
   const { succeeded, failed } = await fileService.uploadMultipleFiles(
     req.files,
-    req.user.id,
+    req?.user?.id,
     folderId,
   );
 

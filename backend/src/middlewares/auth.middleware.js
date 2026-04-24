@@ -6,6 +6,10 @@ import config from "../config/index.js";
 export const authenticate = asyncHandler(async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
+  console.log("Authenticating request. Authorization header:", authHeader);
+  const token = req.cookies?.accessToken || authHeader?.replace("Bearer ", "");
+
+  console.log("Token extracted:", token);
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     throw new ApiError(401, "Access token is required");
   }

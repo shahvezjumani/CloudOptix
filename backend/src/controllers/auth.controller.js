@@ -36,8 +36,6 @@ const register = asyncHandler(async (req, res) => {
       password: await bcrypt.hash(password, 10),
       username,
       storageUsed: 0,
-      sessions: null,
-      files: null,
     },
   });
 
@@ -58,7 +56,11 @@ const register = asyncHandler(async (req, res) => {
     },
   });
 
-  res.status(201).json(new ApiResponse("User registered successfully", user));
+  // Quick fix for the BigInt serialization issue
+  const userResponse = serializationUser(user);
+  return res
+    .status(201)
+    .json(new ApiResponse(201,  userResponse, "User registered successfully"));
 });
 
 const verifyEmail = asyncHandler(async (req, res) => {
@@ -150,6 +152,8 @@ const login = asyncHandler(async (req, res) => {
     },
   );
 
+  const userResponse = serializationUser(user);
+
   res
     .status(200)
     .cookie("refreshToken", refreshToken, {
@@ -158,7 +162,13 @@ const login = asyncHandler(async (req, res) => {
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     })
-    .json(new ApiResponse(200, { accessToken, user }, "Login successful"));
+    .json(
+      new ApiResponse(
+        200,
+        { accessToken, user: userResponse },
+        "Login successful",
+      ),
+    );
 });
 
 const logout = asyncHandler(async (req, res) => {
@@ -278,6 +288,13 @@ const refreshToken = asyncHandler(async (req, res) => {
       ),
     );
 });
+
+function serializationUser(user) {
+  return {
+    ...user,
+    storageUsed: user.storageUsed ? user.storageUsed.toString() : "0",
+  };
+}
 
 // forgot password
 // reset password

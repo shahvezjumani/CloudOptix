@@ -57,6 +57,7 @@ model User {
   isVerified  Boolean   @default(false)
   storageUsed BigInt?    @default(0)
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
   sessions    Session[] @relation("user_sessions")
   files       File[]
   folders Folder[] 
@@ -64,10 +65,11 @@ model User {
 
 model File {
   id               String        @id @default(uuid())
-  folderId  String? 
-  folder    Folder?   @relation(fields: [folderId], references: [id])
-  ownerId          String
-  owner            User          @relation(fields: [ownerId], references: [id])
+folderId  String?
+  folder    Folder?  @relation(fields: [folderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   name             String
   originalName     String
   mimeType         String

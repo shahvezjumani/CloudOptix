@@ -1,5 +1,5 @@
-import prisma from "../prisma/client.js";
-import { AppError } from "../middleware/error.middleware.js";
+import prisma from "../lib/prisma.js";
+import { ApiError } from "../utils/index.js";
 
 export async function createFolder(name, userId, parentId = null) {
   // Validate parentId belongs to this user if provided

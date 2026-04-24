@@ -3,12 +3,12 @@ import { authenticate } from "../middlewares/auth.middleware.js";
 import {
   uploadSingle,
   uploadMultiple,
-} from "../middleware/upload.middleware.js";
+} from "../middlewares/upload.middleware.js";
 import * as ctrl from "../controllers/files.controller.js";
 
 const router = Router();
 
-// router.use(authenticate); // all file routes require auth
+router.use(authenticate); // all file routes require auth
 
 router.post("/upload", uploadSingle, ctrl.uploadFile); // single
 router.post("/upload/batch", uploadMultiple, ctrl.uploadFiles); // multiple
