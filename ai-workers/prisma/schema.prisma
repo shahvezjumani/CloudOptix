@@ -87,6 +87,22 @@ folderId  String?
   versions         FileVersion[]
   shares           FileShare[]
   tags             FileTag[]
+    pHash         String?          // perceptual hash for image similarity
+  duplicates    DuplicateFile[]  @relation("file_duplicates")
+  duplicateOf   DuplicateFile[]  @relation("duplicate_of")
+}
+
+model DuplicateFile {
+  id            String   @id @default(uuid())
+  fileId        String
+  file          File     @relation("file_duplicates", fields: [fileId], references: [id])
+  duplicateOfId String
+  duplicateOf   File     @relation("duplicate_of", fields: [duplicateOfId], references: [id])
+  duplicateType String   // exact | visual
+  similarity    Int      // 0-100
+  createdAt     DateTime @default(now())
+
+  @@unique([fileId, duplicateOfId])
 }
 
 model Folder {
