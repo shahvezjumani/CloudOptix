@@ -19,10 +19,8 @@ export async function computePerceptualHash(
     const avg =
       data.reduce((sum: number, val: number) => sum + val, 0) / data.length;
     let hash = "";
-    for (const pixel of data) {
-      hash += pixel >= avg ? "1" : "0";
-    }
-    return hash; // 64-char binary string
+    for (const pixel of data) hash += pixel >= avg ? "1" : "0";
+    return hash;
   } catch (err) {
     console.error("pHash failed:", (err as Error).message);
     return null;
@@ -30,11 +28,9 @@ export async function computePerceptualHash(
 }
 
 function hammingDistance(a: string, b: string): number {
-  let distance = 0;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) distance++;
-  }
-  return distance;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+  return d;
 }
 
 export interface DuplicateResult {
@@ -54,20 +50,14 @@ export async function detectDuplicates(
 ): Promise<DuplicateResult[]> {
   const duplicates: DuplicateResult[] = [];
 
-  // 1. Exact match by SHA-256
+  // Exact match
   if (hash) {
-    const exactMatches = await prisma.file.findMany({
-      where: {
-        ownerId,
-        hash,
-        id: { not: fileId },
-        isDeleted: false,
-      },
+    const exact = await prisma.file.findMany({
+      where: { ownerId, hash, id: { not: fileId }, isDeleted: false },
       select: { id: true, name: true, createdAt: true },
     });
-
     duplicates.push(
-      ...exactMatches.map((f) => ({
+      ...exact.map((f) => ({
         ...f,
         duplicateType: "exact" as const,
         similarity: 100,
@@ -75,24 +65,23 @@ export async function detectDuplicates(
     );
   }
 
-  // 2. Visual similarity by perceptual hash (images only)
+  // Visual match — pHash now exists in schema after migration
   if (pHash && mimeType.startsWith("image/")) {
-    const otherImages = await prisma.file.findMany({
+    const others = await prisma.file.findMany({
       where: {
         ownerId,
         mimeType: { startsWith: "image/" },
         id: { not: fileId },
         isDeleted: false,
-        pHash: { not: null },
+        pHash: { not: null }, // ✓ now valid after migration
       },
       select: { id: true, name: true, pHash: true, createdAt: true },
     });
 
-    for (const img of otherImages) {
+    for (const img of others) {
       if (!img.pHash) continue;
       const distance = hammingDistance(pHash, img.pHash);
       if (distance <= 10) {
-        // ≤10 = visually similar
         duplicates.push({
           id: img.id,
           name: img.name,

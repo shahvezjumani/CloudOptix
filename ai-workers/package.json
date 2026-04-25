@@ -11,6 +11,9 @@
     "test": "echo \"No tests yet...\""
   },
   "dependencies": {
+    "@azure-rest/ai-vision-image-analysis": "^1.0.0-beta.3",
+    "@azure/ai-form-recognizer": "^5.1.0",
+    "@azure/ai-language-text": "^1.1.0",
     "@azure/functions": "^4.0.0",
     "@azure/storage-blob": "^12.17.0",
     "@prisma/client": "^5.0.0",

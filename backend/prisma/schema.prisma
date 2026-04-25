@@ -95,9 +95,9 @@ folderId  String?
 model DuplicateFile {
   id            String   @id @default(uuid())
   fileId        String
-  file          File     @relation("file_duplicates", fields: [fileId], references: [id])
+  file          File     @relation("file_duplicates", fields: [fileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   duplicateOfId String
-  duplicateOf   File     @relation("duplicate_of", fields: [duplicateOfId], references: [id])
+  duplicateOf   File     @relation("duplicate_of", fields: [duplicateOfId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   duplicateType String   // exact | visual
   similarity    Int      // 0-100
   createdAt     DateTime @default(now())

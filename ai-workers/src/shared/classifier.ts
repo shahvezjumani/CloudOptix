@@ -1,64 +1,127 @@
-import openai from "./openai";
+import { languageClient } from "./clients";
 
-const CATEGORIES = [
-  "Finance",
-  "Legal",
-  "Medical",
-  "Travel",
-  "Work",
-  "Education",
-  "Personal",
-  "Photos",
-  "Videos",
-  "Other",
-] as const;
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  Finance: [
+    "invoice",
+    "receipt",
+    "payment",
+    "bank",
+    "tax",
+    "salary",
+    "budget",
+    "expense",
+  ],
+  Legal: [
+    "contract",
+    "agreement",
+    "legal",
+    "court",
+    "attorney",
+    "lawsuit",
+    "terms",
+  ],
+  Medical: [
+    "prescription",
+    "diagnosis",
+    "doctor",
+    "hospital",
+    "patient",
+    "medicine",
+  ],
+  Travel: [
+    "flight",
+    "hotel",
+    "booking",
+    "passport",
+    "visa",
+    "itinerary",
+    "ticket",
+  ],
+  Work: [
+    "meeting",
+    "project",
+    "report",
+    "presentation",
+    "proposal",
+    "deadline",
+  ],
+  Education: [
+    "assignment",
+    "course",
+    "lecture",
+    "grade",
+    "university",
+    "exam",
+    "thesis",
+  ],
+  Personal: [
+    "diary",
+    "journal",
+    "personal",
+    "family",
+    "birthday",
+    "wedding",
+    "letter",
+  ],
+};
 
-type Category = (typeof CATEGORIES)[number];
+function keywordScore(text: string): { category: string; score: number } {
+  const lower = text.toLowerCase();
+  let best = { category: "Other", score: 0 };
+
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    const score = keywords.filter((kw) => lower.includes(kw)).length;
+    if (score > best.score) best = { category, score };
+  }
+
+  return best;
+}
 
 export async function classifyFile(
   fileName: string,
   extractedText: string,
+  description: string,
+  tags: string[],
   mimeType: string,
-): Promise<Category> {
-  // Fast rule-based path — no API call needed
+): Promise<string> {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
 
   if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext) && !extractedText) {
+    if (tags.some((t) => ["receipt", "invoice", "money"].includes(t)))
+      return "Finance";
+    if (tags.some((t) => ["map", "airplane", "passport"].includes(t)))
+      return "Travel";
     return "Photos";
   }
-  if (["mp4", "mov", "avi", "mkv"].includes(ext)) {
-    return "Videos";
-  }
-  if (!extractedText || extractedText.length < 20) {
-    return "Other";
-  }
 
-  // Truncate to save tokens — first 1000 chars is enough
-  const textSample = extractedText.substring(0, 1000);
+  if (["mp4", "mov", "avi", "mkv"].includes(ext)) return "Videos";
 
+  const combinedText = [fileName, extractedText, description, ...tags]
+    .filter(Boolean)
+    .join(" ");
+
+  if (!combinedText.trim()) return "Other";
+
+  const keywordResult = keywordScore(combinedText);
+  if (keywordResult.score >= 2) return keywordResult.category;
+
+  // Language Service — extractKeyPhrases (correct V2 SDK method)
   try {
-    const response = await openai.chat.completions.create({
-      model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT!,
-      messages: [
-        {
-          role: "system",
-          content: `You are a file classification assistant.
-Classify the file into exactly ONE of these categories: ${CATEGORIES.join(", ")}.
-Respond with ONLY the category name, nothing else.`,
-        },
-        {
-          role: "user",
-          content: `File name: ${fileName}\n\nContent preview:\n${textSample}`,
-        },
-      ],
-      max_tokens: 10,
-      temperature: 0,
-    });
+    const results = await languageClient.analyze("KeyPhraseExtraction", [
+      { id: "1", language: "en", text: combinedText.substring(0, 5000) },
+    ]);
 
-    const category = response.choices[0]?.message?.content?.trim() as Category;
-    return CATEGORIES.includes(category) ? category : "Other";
+    const keyPhrases = ((results[0] as any).keyPhrases as string[]) ?? [];
+    const phraseText = keyPhrases.join(" ");
+    const phraseResult = keywordScore(phraseText);
+
+    return phraseResult.score > 0
+      ? phraseResult.category
+      : keywordResult.category !== "Other"
+        ? keywordResult.category
+        : "Other";
   } catch (err) {
-    console.error("Classification failed:", (err as Error).message);
-    return "Other";
+    console.error("Language Service failed:", (err as Error).message);
+    return keywordResult.category;
   }
 }

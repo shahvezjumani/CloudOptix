@@ -1,6 +1,6 @@
 import { app, InvocationContext } from "@azure/functions";
 import prisma from "../shared/prisma";
-import { extractText } from "../shared/extractor";
+import { extractContent } from "../shared/extractor";
 import { classifyFile } from "../shared/classifier";
 import { generateEmbedding } from "../shared/embeddings";
 import { computePerceptualHash, detectDuplicates } from "../shared/duplicate";
@@ -9,24 +9,21 @@ export async function ProcessUpload(
   blob: Buffer,
   context: InvocationContext,
 ): Promise<void> {
-  // Extract path parts from trigger metadata
   const userId = context.triggerMetadata?.userId as string;
   const blobName = context.triggerMetadata?.blobName as string;
   const blobKey = `${userId}/${blobName}`;
 
-  context.log(`🔄 Processing blob: ${blobKey} (${blob.length} bytes)`);
+  context.log(`🔄 Processing: ${blobKey} (${blob.length} bytes)`);
 
-  // 1. Find matching DB record
   const file = await prisma.file.findFirst({
     where: { blobKey, processingStatus: "pending" },
   });
 
   if (!file) {
-    context.log(`⚠️  No pending file found for blobKey: ${blobKey}`);
+    context.log(`⚠️  No pending file found for: ${blobKey}`);
     return;
   }
 
-  // 2. Mark as processing
   await prisma.file.update({
     where: { id: file.id },
     data: { processingStatus: "processing" },
@@ -35,35 +32,49 @@ export async function ProcessUpload(
   try {
     const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(blob);
 
-    // 3. Extract text
-    context.log("📄 Extracting text...");
-    const extractedText = await extractText(buffer, file.mimeType);
-    context.log(`   → ${extractedText.length} characters`);
+    // 1. Extract content using appropriate Azure service
+    context.log("📄 Extracting content...");
+    const { extractedText, description, tags } = await extractContent(
+      buffer,
+      file.mimeType,
+    );
+    context.log(
+      `   → text: ${extractedText.length} chars | desc: "${description}" | tags: [${tags.join(", ")}]`,
+    );
 
-    // 4. Classify
+    // 2. Classify using Language Service + keywords
     context.log("🏷️  Classifying...");
     const category = await classifyFile(
       file.originalName,
       extractedText,
+      description,
+      tags,
       file.mimeType,
     );
     context.log(`   → ${category}`);
 
-    // 5. Generate embedding
+    // 3. Generate embedding (local until OpenAI available)
     context.log("🧠 Generating embedding...");
-    const embeddingInput = extractedText || file.originalName;
-    const embedding = await generateEmbedding(embeddingInput);
-    context.log(`   → ${embedding?.length ?? 0} dimensions`);
+    const embeddingInput = [
+      extractedText,
+      description,
+      ...tags,
+      file.originalName,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const embedding = generateEmbedding(embeddingInput);
+    context.log(`   → ${embedding.length} dimensions`);
 
-    // 6. Perceptual hash for images
+    // 4. Perceptual hash for images
     let pHash: string | null = null;
     if (file.mimeType.startsWith("image/")) {
       context.log("🖼️  Computing perceptual hash...");
       pHash = await computePerceptualHash(buffer);
     }
 
-    // 7. Detect duplicates
-    context.log("🔍 Checking for duplicates...");
+    // 5. Detect duplicates
+    context.log("🔍 Detecting duplicates...");
     const duplicates = await detectDuplicates(
       file.id,
       file.ownerId,
@@ -73,34 +84,45 @@ export async function ProcessUpload(
     );
     context.log(`   → ${duplicates.length} duplicate(s)`);
 
-    // 8. Update file record with all AI results
+    // 6. Save everything to DB
     await prisma.file.update({
       where: { id: file.id },
       data: {
         extractedText: extractedText || null,
         category,
-        embedding: embedding ? JSON.stringify(embedding) : null,
+        embedding: embedding.length ? JSON.stringify(embedding) : null,
         pHash,
         processingStatus: "done",
       },
     });
 
-    // 9. Store duplicate relationships
+    // 7. Save duplicate records
     if (duplicates.length > 0) {
-      await prisma.duplicateFile.createMany({
-        data: duplicates.map((d) => ({
-          fileId: file.id,
-          duplicateOfId: d.id,
-          duplicateType: d.duplicateType,
-          similarity: d.similarity,
-        })),
-        skipDuplicates: true,
-      });
+      for (const d of duplicates) {
+        await prisma.duplicateFile.upsert({
+          where: {
+            fileId_duplicateOfId: {
+              fileId: file.id,
+              duplicateOfId: d.id,
+            },
+          },
+          update: {
+            similarity: d.similarity,
+            duplicateType: d.duplicateType,
+          },
+          create: {
+            fileId: file.id,
+            duplicateOfId: d.id,
+            duplicateType: d.duplicateType,
+            similarity: d.similarity,
+          },
+        });
+      }
     }
 
-    context.log(`✅ Complete: "${file.name}" → ${category}`);
+    context.log(`✅ Done: "${file.name}" → ${category}`);
   } catch (err) {
-    context.log.error(`❌ Processing failed: ${(err as Error).message}`);
+    context.error(`❌ Failed: ${(err as Error).message}`);
     await prisma.file.update({
       where: { id: file.id },
       data: { processingStatus: "failed" },
