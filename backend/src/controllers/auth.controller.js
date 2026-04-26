@@ -60,7 +60,7 @@ const register = asyncHandler(async (req, res) => {
   const userResponse = serializationUser(user);
   return res
     .status(201)
-    .json(new ApiResponse(201,  userResponse, "User registered successfully"));
+    .json(new ApiResponse(201, userResponse, "User registered successfully"));
 });
 
 const verifyEmail = asyncHandler(async (req, res) => {
@@ -186,16 +186,32 @@ const logout = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Refresh token is required");
   }
 
-  const decode = await jwt.verify(refreshToken, config.REFRESH_JWT_SECRET);
+  let decoded;
+  try {
+    decoded = jwt.verify(refreshToken, config.REFRESH_JWT_SECRET);
+  } catch {
+    // Token invalid/expired — just clear cookie and exit
+    return res
+      .clearCookie("refreshToken")
+      .json(new ApiResponse(200, {}, "Logged out"));
+  }
 
-  await prisma.session.update({
-    where: {
-      refreshToken: await bcrypt.hash(refreshToken, 10),
-    },
-    data: {
-      revoked: true,
-    },
+  // Find active sessions for this user and revoke by comparing tokens
+  const sessions = await prisma.session.findMany({
+    where: { userId: decoded.userId, revoked: false },
   });
+
+  // Find the matching session using bcrypt.compare
+  for (const session of sessions) {
+    const matches = await bcrypt.compare(refreshToken, session.refreshToken);
+    if (matches) {
+      await prisma.session.update({
+        where: { id: session.id },
+        data: { revoked: true },
+      });
+      break;
+    }
+  }
 
   res
     .clearCookie("refreshToken")
@@ -234,58 +250,69 @@ clear cookies
 });
 
 const refreshToken = asyncHandler(async (req, res) => {
-  const refreshToken = req.cookies.refreshToken;
+  const token = req.cookies.refreshToken;
 
-  if (!refreshToken) {
-    throw new ApiError(400, "Refresh token is required");
+  if (!token) {
+    throw new ApiError(401, "Refresh token is required");
   }
 
-  const decode = await jwt.verify(refreshToken, config.REFRESH_JWT_SECRET);
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.REFRESH_JWT_SECRET);
+  } catch {
+    throw new ApiError(401, "Invalid or expired refresh token");
+  }
 
-  const session = await prisma.session.findFirst({
-    where: {
-      refreshToken: await bcrypt.hash(refreshToken, 10),
-      revoked: false,
-    },
+  // Find active sessions for this user
+  const sessions = await prisma.session.findMany({
+    where: { userId: decoded.userId, revoked: false },
   });
 
-  if (!session) {
-    throw new ApiError(400, "Invalid refresh token");
+  // Find the matching session
+  let matchedSession = null;
+  for (const session of sessions) {
+    const matches = await bcrypt.compare(token, session.refreshToken);
+    if (matches) {
+      matchedSession = session;
+      break;
+    }
   }
 
-  const accessToken = jwt.sign(
-    { userId: decode.userId, sessionId: session.id },
-    config.ACCESS_JWT_SECRET,
-    {
-      expiresIn: config.ACCESS_JWT_EXPIRES_IN,
-    },
-  );
+  if (!matchedSession) {
+    throw new ApiError(401, "Session not found or revoked");
+  }
 
+  // Generate new tokens
   const newRefreshToken = jwt.sign(
-    { userId: decode.userId },
+    { userId: decoded.userId },
     config.REFRESH_JWT_SECRET,
-    {
-      expiresIn: config.REFRESH_JWT_EXPIRES_IN,
-    },
+    { expiresIn: config.REFRESH_JWT_EXPIRES_IN },
   );
 
-  prisma.session.update({
-    where: {
-      id: session.id,
-    },
-    data: {
-      refreshToken: await bcrypt.hash(newRefreshToken, 10),
-    },
+  const newAccessToken = jwt.sign(
+    { userId: decoded.userId, sessionId: matchedSession.id },
+    config.ACCESS_JWT_SECRET,
+    { expiresIn: config.ACCESS_JWT_EXPIRES_IN },
+  );
+
+  // Rotate refresh token in DB
+  await prisma.session.update({
+    where: { id: matchedSession.id },
+    data: { refreshToken: await bcrypt.hash(newRefreshToken, 10) },
   });
 
+  // Send new refresh token as httpOnly cookie
+  // Send new access token in body — frontend stores in memory
   res
     .status(200)
+    .cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    })
     .json(
-      new ApiResponse(
-        200,
-        { accessToken, refreshToken: newRefreshToken },
-        "Token refreshed successfully",
-      ),
+      new ApiResponse(200, { accessToken: newAccessToken }, "Token refreshed"),
     );
 });
 
@@ -296,7 +323,33 @@ function serializationUser(user) {
   };
 }
 
+const getMe = asyncHandler(async (req, res) => {
+  // req.user is already set by authenticate middleware
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      storageUsed: true,
+      createdAt: true,
+    },
+  });
+
+  res.json(
+    new ApiResponse(
+      200,
+      {
+        ...user,
+        storageUsed: Number(user.storageUsed),
+        storageUsedMB: (Number(user.storageUsed) / (1024 * 1024)).toFixed(2),
+      },
+      "User fetched successfully",
+    ),
+  );
+});
+
 // forgot password
 // reset password
 
-export { register, verifyEmail, login, logout, logoutAll, refreshToken };
+export { register, verifyEmail, login, logout, logoutAll, refreshToken, getMe };
