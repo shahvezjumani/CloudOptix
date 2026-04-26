@@ -349,7 +349,56 @@ const getMe = asyncHandler(async (req, res) => {
   );
 });
 
+// ── Resend OTP ────────────────────────────────────────────────────────────────
+// POST /auth/resend-otp
+const resendOtp = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    throw new ApiError(400, "Email is required");
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { email },
+  });
+
+  if (!user) {
+    throw new ApiError(400, "User not found");
+  }
+
+  if (user.isVerified) {
+    throw new ApiError(400, "Email already verified");
+  }
+
+  // Delete old OTP
+  await prisma.otp.deleteMany({
+    where: { email },
+  });
+
+  // Generate and send new OTP
+  const otp = generateOtp();
+  await sendVerificationEmail(email, otp);
+
+  await prisma.otp.create({
+    data: {
+      email,
+      code: await bcrypt.hash(otp, 10),
+    },
+  });
+
+  res.status(200).json(new ApiResponse(200, {}, "OTP resent successfully"));
+});
+
 // forgot password
 // reset password
 
-export { register, verifyEmail, login, logout, logoutAll, refreshToken, getMe };
+export {
+  register,
+  verifyEmail,
+  resendOtp,
+  login,
+  logout,
+  logoutAll,
+  refreshToken,
+  getMe,
+};

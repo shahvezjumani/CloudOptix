@@ -13,10 +13,10 @@ azurite-data/
 azurite-debug.log
 
 # Environment & Secrets
-.env
 local.settings.json
 
 # IDE files
 .vscode/
 
 README.md
+config.bat
